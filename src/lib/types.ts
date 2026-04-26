@@ -29,6 +29,25 @@ export type AssessmentTurn = {
   target_bloom: BloomLevel;
   user_answer: string;
   graded?: GradedAnswer;
+  /** Behavioural telemetry for cheating-risk scoring. Optional for backwards compat. */
+  telemetry?: TurnTelemetry;
+};
+
+export type TurnTelemetry = {
+  /** Total ms from question render to submit */
+  durationMs: number;
+  /** Ms from question render to first keystroke (or paste) */
+  timeToFirstKeyMs: number;
+  /** Final answer length in chars */
+  totalChars: number;
+  /** Number of paste events */
+  pasteEvents: number;
+  /** Total characters injected via paste */
+  pastedChars: number;
+  /** Distinct keystrokes (excluding modifier-only) */
+  keystrokes: number;
+  /** Tab/window blur events while composing */
+  focusLossCount: number;
 };
 
 export type GradedAnswer = {
@@ -65,6 +84,12 @@ export type ScoreSummary = {
   top_strengths: string[];
   critical_gaps: string[];
   headline_calibration_note: string; // e.g. "Moderate overconfidence on Kubernetes and System Design"
+  /** 0-100, higher = behaviour consistent with authentic human effort. Optional for backwards compat. */
+  authenticity_score?: number;
+  /** Skills whose per-turn telemetry tripped the cheating-risk threshold */
+  flagged_skills?: string[];
+  /** Human-readable summary line for the authenticity hero card */
+  authenticity_note?: string;
 };
 
 export type ResourceItem = {

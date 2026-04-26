@@ -20,7 +20,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { loadSession, saveSession } from "@/lib/session";
-import type { AssessmentTurn, Session, SkillAssessment } from "@/lib/types";
+import type { AssessmentTurn, Session, SkillAssessment, TurnTelemetry } from "@/lib/types";
 import type { BloomLevel } from "@/lib/utils";
 import { BLOOM_LEVELS, cn } from "@/lib/utils";
 
@@ -66,6 +66,67 @@ export function AssessClient() {
     null,
   );
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Behavioural telemetry — captured per-question, snapshotted on submit.
+  // Lives in a ref to avoid re-renders on every keystroke. See computeTurnRisk
+  // in lib/scoring.ts for how these signals roll into the Authenticity Score.
+  const telemetryRef = useRef<{
+    questionRenderedAt: number;
+    firstKeyAt: number | null;
+    keystrokes: number;
+    pasteEvents: number;
+    pastedChars: number;
+    focusLossCount: number;
+  }>({
+    questionRenderedAt: Date.now(),
+    firstKeyAt: null,
+    keystrokes: 0,
+    pasteEvents: 0,
+    pastedChars: 0,
+    focusLossCount: 0,
+  });
+
+  function resetTelemetry() {
+    telemetryRef.current = {
+      questionRenderedAt: Date.now(),
+      firstKeyAt: null,
+      keystrokes: 0,
+      pasteEvents: 0,
+      pastedChars: 0,
+      focusLossCount: 0,
+    };
+  }
+
+  // Reset telemetry whenever a new question is rendered (new turn or new skill).
+  useEffect(() => {
+    if (currentQuestion) resetTelemetry();
+  }, [currentQuestion]);
+
+  // Tab/window focus loss while composing is a soft cheating signal.
+  useEffect(() => {
+    if (phase !== "interview") return;
+    function onVisibility() {
+      if (document.visibilityState === "hidden") {
+        telemetryRef.current.focusLossCount += 1;
+      }
+    }
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [phase]);
+
+  function snapshotTelemetry(answerLength: number): TurnTelemetry {
+    const t = telemetryRef.current;
+    const now = Date.now();
+    return {
+      durationMs: now - t.questionRenderedAt,
+      timeToFirstKeyMs: t.firstKeyAt ? t.firstKeyAt - t.questionRenderedAt : now - t.questionRenderedAt,
+      totalChars: answerLength,
+      pasteEvents: t.pasteEvents,
+      pastedChars: t.pastedChars,
+      keystrokes: t.keystrokes,
+      focusLossCount: t.focusLossCount,
+    };
+  }
 
   // Hydrate
   useEffect(() => {
@@ -210,6 +271,7 @@ export function AssessClient() {
               follow_up_suggestion: data.grading_of_previous.follow_up_suggestion,
             }
           : undefined,
+        telemetry: snapshotTelemetry(answer.length),
       };
       const updatedAssessment: SkillAssessment = {
         ...assessment,
@@ -380,10 +442,29 @@ export function AssessClient() {
                 rows={5}
                 disabled={loading}
                 onKeyDown={(e) => {
+                  // Telemetry: count real keystrokes (skip pure modifier presses).
+                  if (
+                    e.key.length === 1 ||
+                    e.key === "Backspace" ||
+                    e.key === "Delete" ||
+                    e.key === "Enter" ||
+                    e.key === "Tab"
+                  ) {
+                    const t = telemetryRef.current;
+                    t.keystrokes += 1;
+                    if (t.firstKeyAt === null) t.firstKeyAt = Date.now();
+                  }
                   if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                     e.preventDefault();
                     submitAnswer();
                   }
+                }}
+                onPaste={(e) => {
+                  const t = telemetryRef.current;
+                  const pasted = e.clipboardData.getData("text") ?? "";
+                  t.pasteEvents += 1;
+                  t.pastedChars += pasted.length;
+                  if (t.firstKeyAt === null) t.firstKeyAt = Date.now();
                 }}
               />
               <div className="flex items-center justify-between mt-3">

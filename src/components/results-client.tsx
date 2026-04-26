@@ -11,6 +11,7 @@ import {
   AlertTriangle,
   ShieldCheck,
   Compass,
+  Eye,
 } from "lucide-react";
 import {
   Radar,
@@ -61,7 +62,7 @@ export function ResultsClient() {
     }
     // Compute scores deterministically
     const scores = computeSkillScores(s.context, s.assessments);
-    const summary = computeSummary(s.context, scores);
+    const summary = computeSummary(s.context, scores, s.assessments);
     const updated: Session = { ...s, scores, summary };
     saveSession(updated);
     setSession(updated);
@@ -157,6 +158,17 @@ export function ResultsClient() {
             </CardContent>
           </Card>
         </motion.div>
+
+        {/* Authenticity strip — surfaced only when behavioural telemetry was captured.
+            Pairs with the Honesty Score: Honesty = self-perception accuracy,
+            Authenticity = whether the answers themselves look human-typed. */}
+        {typeof summary.authenticity_score === "number" && (
+          <AuthenticityStrip
+            score={summary.authenticity_score}
+            note={summary.authenticity_note ?? ""}
+            flagged={summary.flagged_skills ?? []}
+          />
+        )}
 
         {/* Charts row: claimed vs verified bars + radar */}
         <div className="grid md:grid-cols-5 gap-5 mb-8">
@@ -263,6 +275,76 @@ export function ResultsClient() {
         </div>
       </div>
     </main>
+  );
+}
+
+function AuthenticityStrip({
+  score,
+  note,
+  flagged,
+}: {
+  score: number;
+  note: string;
+  flagged: string[];
+}) {
+  const tone =
+    score >= 85 ? "success" : score >= 65 ? "warn" : "danger";
+  const toneRing =
+    tone === "success"
+      ? "ring-[color:var(--color-success)]/30 bg-[color:var(--color-success)]/8"
+      : tone === "warn"
+        ? "ring-[color:var(--color-warn)]/30 bg-[color:var(--color-warn)]/8"
+        : "ring-[color:var(--color-danger)]/30 bg-[color:var(--color-danger)]/8";
+  const toneText =
+    tone === "success"
+      ? "text-[color:var(--color-success)]"
+      : tone === "warn"
+        ? "text-[color:var(--color-warn)]"
+        : "text-[color:var(--color-danger)]";
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, delay: 0.05 }}
+      className={cn(
+        "mb-8 rounded-xl ring-1 px-5 py-4 flex flex-col md:flex-row md:items-center gap-4",
+        toneRing,
+      )}
+    >
+      <div className="flex items-center gap-3 min-w-0">
+        <div className={cn("w-10 h-10 rounded-lg grid place-items-center bg-[var(--color-bg)]/60", toneText)}>
+          <Eye className="w-5 h-5" />
+        </div>
+        <div className="min-w-0">
+          <div className="text-xs uppercase tracking-widest text-[var(--color-fg-dim)]">
+            Authenticity Score
+          </div>
+          <div className="flex items-baseline gap-2">
+            <span className={cn("text-2xl font-semibold tabular-nums", toneText)}>{score}</span>
+            <span className="text-xs text-[var(--color-fg-muted)]">/ 100</span>
+          </div>
+        </div>
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm text-[var(--color-fg)] leading-snug">{note}</p>
+        {flagged.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 mt-2">
+            <span className="text-[10px] uppercase tracking-widest text-[var(--color-fg-dim)]">
+              Flagged
+            </span>
+            {flagged.slice(0, 4).map((s) => (
+              <Badge key={s} variant="critical">
+                {s}
+              </Badge>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="text-[11px] text-[var(--color-fg-dim)] md:max-w-[14rem] md:text-right leading-snug">
+        Computed from typing telemetry (paste ratio, WPM, focus loss). 100 = behaviour
+        consistent with authentic human effort.
+      </div>
+    </motion.div>
   );
 }
 
