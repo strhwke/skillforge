@@ -155,4 +155,24 @@ Updated README so future readers see the actual constraints, not the optimistic 
 
 ---
 
+### Phase 5.7 — Token diet (DONE, no LLM smoke test to avoid burning more quota)
+
+User hit Gemini spend limit during day-of testing. Audited every prompt + budget and trimmed without breaking functionality:
+
+**Input-side savings (per session):**
+- `extract`: hard-cap JD and resume at 4000 chars each (was unbounded). Trimmed system prompt prose ~60%. Saves ~0.5-1k tokens depending on input length.
+- `assess`: BIG one. Stop re-sending `jd_summary` + `resume_summary` + `resume_evidence` on every turn — they're only sent on turn 1, all subsequent turns rely on `priorTurns` for continuity. Compacted prior-turn serialization (drop verbose evidence string, keep just `BloomLevel/score`). Truncated `user_answer` to 400 chars and `latestUserAnswer` to 600 chars. Trimmed system prompt prose ~70%. Net: ~50-60% fewer input tokens per turn × ~12 turns/session = biggest single win.
+- `plan`: trimmed system prompt prose ~60%. Capped `jd_summary` at 600 chars in user prompt. Removed redundant `resume_summary` (we already have strengths/gaps). Saves ~400-600 tokens.
+- `resources`: trimmed system prompt ~50%. Capped `jobContext` at 200 chars. Saves ~200 tokens × 6 calls.
+
+**Output-side savings:**
+- `extract`: maxOutputTokens 4096 → 2048 (observed output ~1.5k).
+- `assess`: 1024 → 600 (observed output ~400).
+- `plan`: maxOutputTokens 8192 → 3072 + thinkingBudget 4096 → 1024. Saves ~3k thinking tokens per session — dominant single saving.
+- `resources`: 2048 → 1024.
+
+**Estimated total per session:** ~50-60% fewer billed tokens (input + output + thinking). Build passes. Skipped LLM smoke validation specifically to preserve quota for the user's actual demo.
+
+---
+
 (future phases append here)

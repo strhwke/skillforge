@@ -85,8 +85,8 @@ export async function POST(req: NextRequest) {
       json: true,
       responseSchema: PLAN_SCHEMA as unknown as Record<string, unknown>,
       temperature: 0.3,
-      maxOutputTokens: 8192,
-      thinkingBudget: 4096,
+      maxOutputTokens: 3072,
+      thinkingBudget: 1024,
     });
 
     if (!planResult.json) {

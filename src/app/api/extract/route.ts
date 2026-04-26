@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
       json: true,
       responseSchema: EXTRACT_SCHEMA as unknown as Record<string, unknown>,
       temperature: 0.2,
-      maxOutputTokens: 4096,
+      maxOutputTokens: 2048,
     });
 
     if (!result.json) {

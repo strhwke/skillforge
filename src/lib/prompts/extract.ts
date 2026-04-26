@@ -1,20 +1,11 @@
-export const EXTRACT_SYSTEM = `You are SkillForge, a senior technical recruiter and engineering hiring manager.
-You analyze pairs of (Job Description, Resume) to surface the precise skill set the role demands and
-how it maps onto the candidate's resume claims. You are blunt, evidence-driven, and never invent skills.
+export const EXTRACT_SYSTEM = `You are SkillForge, a senior technical recruiter. From a (JD, Resume) pair, output the precise skill set the role demands and how the resume maps to it. Strict JSON only, never invent skills.
 
 Rules:
-- Output STRICT JSON matching the schema. No prose, no markdown.
-- Skills must be canonical and atomic: prefer "PostgreSQL" over "SQL databases", "React" over "Frontend".
-- Group only when the JD is itself broad ("System Design", "Distributed Systems").
-- jd_weight reflects how essential the skill is for the role:
-    3 = critical / must-have / explicitly required
-    2 = strongly required / mentioned multiple times / in core responsibilities
-    1 = nice-to-have / mentioned once in preferred section
-    0 = adjacent / inferred but not in JD
-- Mark mentioned_in_resume only if the resume contains a clear signal (project, employer, bullet, certification).
-- Provide one or two short evidence quotes (verbatim, <= 25 words) per resume-claimed skill.
-- Skills covered: 8 to 14 most assessment-worthy items. Cap at 14.
-- Always include the most important JD skills, even if not in the resume.`;
+- Skills are canonical and atomic ("PostgreSQL" not "SQL databases", "React" not "Frontend"). Group only when JD itself is broad ("System Design").
+- jd_weight: 3=critical/must-have, 2=strongly required, 1=nice-to-have, 0=adjacent/inferred.
+- mentioned_in_resume=true only on clear evidence (project, employer, bullet).
+- 1-2 short verbatim evidence quotes (<=25 words) per resume-claimed skill.
+- 8-14 skills total, always include the most JD-critical ones even if not on resume.`;
 
 export const EXTRACT_SCHEMA = {
   type: "object",
@@ -52,16 +43,15 @@ export const EXTRACT_SCHEMA = {
 } as const;
 
 export function extractPrompt(args: { jd: string; resume: string }): string {
-  return `JOB DESCRIPTION:
-"""
-${args.jd.trim()}
-"""
+  // Hard cap inputs — typical JD is ~1.2k chars, typical resume ~2.5k chars.
+  // Anything beyond 4k chars is boilerplate (benefits, EEO statements, etc).
+  const jd = args.jd.trim().slice(0, 4000);
+  const resume = args.resume.trim().slice(0, 4000);
+  return `JD:
+${jd}
 
-CANDIDATE RESUME:
-"""
-${args.resume.trim()}
-"""
+RESUME:
+${resume}
 
-Return ONLY a JSON object matching the schema. Identify 8-14 most assessment-worthy skills
-(prioritize JD critical + resume claims). Sort skills by jd_weight descending, then by mentioned_in_resume.`;
+JSON only. 8-14 skills sorted by jd_weight desc then mentioned_in_resume desc.`;
 }

@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
       json: true,
       responseSchema: ASSESS_SCHEMA as unknown as Record<string, unknown>,
       temperature: 0.5,
-      maxOutputTokens: 1024,
+      maxOutputTokens: 600,
     });
 
     if (!result.json) {

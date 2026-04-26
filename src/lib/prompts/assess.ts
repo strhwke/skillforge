@@ -1,32 +1,12 @@
-export const ASSESS_SYSTEM = `You are SkillForge, a calm, expert technical interviewer using Bloom's Taxonomy to verify
-real proficiency on a single skill. You are running an ADAPTIVE interview:
+export const ASSESS_SYSTEM = `You are SkillForge, an expert adaptive technical interviewer. Verify real proficiency on ONE skill using Bloom's Taxonomy. Start near the candidate's self-rating; level UP on strong answers, drill DOWN on weak/vague ones.
 
-  • Start at the Bloom level the candidate's self-rating predicts.
-  • If they answer strongly: level UP (Apply -> Analyze -> Evaluate).
-  • If they answer weakly or vaguely: drill DOWN to a more concrete, simpler probe.
-  • Keep questions short, specific, hands-on. Prefer "How would you...", "What happens when...",
-    "Compare A vs B for use case Y", "Walk through the steps to..." over trivia.
-  • Each question must target ONE concrete Bloom level. Name it.
+Question style: short, specific, hands-on (How would you, What happens when, Compare A vs B, Walk through steps). Each question targets exactly one Bloom level (Remember 10 / Understand 30 / Apply 50 / Analyze 68 / Evaluate 83 / Create 95).
 
-You also act as a HARSH but FAIR grader of the candidate's previous answer. You quote a short
-piece of their answer as evidence. Vague, hand-wavy, or buzzword-stuffed answers must score low
-even if they used the right terminology — we want demonstrated understanding, not vocabulary.
+Grade harshly but fairly. Buzzword-stuffed or vague answers must score low even if vocabulary is right. Quote a short evidence span.
 
-Bloom levels (0-100 mapping):
-  Remember (10) — recognize/recall terms
-  Understand (30) — explain in their own words
-  Apply (50) — use in a familiar scenario
-  Analyze (68) — debug, decompose, compare alternatives
-  Evaluate (83) — justify trade-offs, critique design
-  Create (95) — design non-trivial system from scratch
+Stop (is_final=true) when ANY: 3+ graded turns with consistent last-2 levels; 4 graded turns; consistent Evaluate/Create (maxed); consistent Remember-or-below across 2 turns (floored).
 
-Stop the interview (set is_final=true) when ANY of these is true:
-  • You have 3+ graded turns AND the bloom level demonstrated is consistent in the last 2 turns
-  • You have 4 graded turns regardless
-  • The candidate has clearly maxed out (consistent Evaluate or Create)
-  • The candidate cannot pass Understand-level (consistent Remember-or-below across 2 turns)
-
-Output STRICT JSON only. No prose outside the JSON.`;
+Output strict JSON only.`;
 
 export const ASSESS_SCHEMA = {
   type: "object",
@@ -75,49 +55,51 @@ export function assessPrompt(args: {
   priorTurns: AssessmentTurn[];
   latestUserAnswer?: string;
 }): string {
+  // Compact transcript: questions + answers truncated, grading reduced to bloom/score.
+  // (Saves ~50 tokens per turn of history, which compounds across the conversation.)
   const transcript =
     args.priorTurns.length === 0
-      ? "(no prior turns yet — this is the first question)"
+      ? "(none)"
       : args.priorTurns
-          .map(
-            (t, i) =>
-              `Turn ${i + 1} [target: ${t.target_bloom}]\nQ: ${t.question}\nA: ${
-                t.user_answer
-              }\nGraded: ${
-                t.graded
-                  ? `${t.graded.bloom_level_demonstrated} / ${t.graded.score}/100 — ${t.graded.evidence}`
-                  : "ungraded"
-              }`,
-          )
-          .join("\n\n");
+          .map((t, i) => {
+            const g = t.graded
+              ? `${t.graded.bloom_level_demonstrated}/${t.graded.score}`
+              : "-";
+            return `T${i + 1} [${t.target_bloom} -> ${g}] Q: ${t.question}\nA: ${truncate(t.user_answer, 400)}`;
+          })
+          .join("\n");
 
   const latestBlock = args.latestUserAnswer
-    ? `\n\nLATEST CANDIDATE ANSWER (grade this first):\n"""\n${args.latestUserAnswer}\n"""\n`
+    ? `\nLATEST ANSWER (grade first):\n${truncate(args.latestUserAnswer, 600)}`
     : "";
 
-  return `SKILL UNDER ASSESSMENT: ${args.skill.name}
-JD weight (0-3): ${args.skill.jd_weight}
-JD context: ${args.skill.jd_context ?? args.jdContext}
-Resume mentions skill: ${args.skill.mentioned_in_resume ? "yes" : "no"}
-Resume evidence: ${args.skill.resume_evidence?.join(" | ") ?? "(none)"}
-Candidate self-rating (1-5): ${args.selfRating}
-Candidate resume summary: ${args.resumeSummary}
+  // After turn 1 the model already has all the context it needs from priorTurns;
+  // re-sending jd_summary + resume_summary on every turn just burns tokens.
+  const isFirstTurn = args.priorTurns.length === 0;
+  const contextBlock = isFirstTurn
+    ? `JD context: ${truncate(args.skill.jd_context ?? args.jdContext, 240)}
+Resume mentions: ${args.skill.mentioned_in_resume ? "yes" : "no"}${
+        args.skill.resume_evidence?.length
+          ? ` (${args.skill.resume_evidence.slice(0, 1).join(" | ")})`
+          : ""
+      }
+Resume summary: ${truncate(args.resumeSummary, 280)}`
+    : "";
 
+  return `SKILL: ${args.skill.name} (jd_weight=${args.skill.jd_weight}, self_rating=${args.selfRating}/5)
+${contextBlock}
 PRIOR TURNS:
-${transcript}
-${latestBlock}
+${transcript}${latestBlock}
 
-INSTRUCTIONS:
 ${
   args.latestUserAnswer
-    ? "1) Grade the LATEST CANDIDATE ANSWER under grading_of_previous. Quote a short evidence span.\n2) Decide whether to stop (set is_final=true) per the stop conditions.\n3) If continuing, propose next_question targeting an appropriate target_bloom (drill down or level up based on the grade)."
-    : "1) Propose the FIRST question targeting a Bloom level appropriate for self-rating.\n2) Set is_final=false. Do not include grading_of_previous."
+    ? "Grade the LATEST ANSWER (quote 1 short evidence span), then either stop (is_final=true with final_score/final_bloom/1-2 evidence_quotes) or propose the next_question + target_bloom."
+    : "Propose the FIRST next_question + target_bloom for this self-rating. is_final=false. Skip grading_of_previous."
 }
-${
-  args.priorTurns.length >= 2 || args.latestUserAnswer
-    ? "If is_final=true, include final_score (0-100), final_bloom, and 1-3 evidence_quotes from the candidate's answers that justify the score."
-    : ""
+JSON only.`;
 }
 
-Return ONLY a JSON object matching the schema.`;
+function truncate(s: string | undefined, n: number): string {
+  if (!s) return "";
+  return s.length <= n ? s : s.slice(0, n - 1) + "…";
 }

@@ -27,7 +27,7 @@ export async function curateResources(args: {
       }),
       googleSearch: true,
       temperature: 0.3,
-      maxOutputTokens: 2048,
+      maxOutputTokens: 1024,
     });
 
     const parsed = safeJsonParse<ResourceItem[]>(result.text);
