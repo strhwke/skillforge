@@ -1,0 +1,28 @@
+Machine Learning Engineer — Halo Health, an AI-first chronic-care platform
+
+The role
+We're building the inference layer that powers Halo's continuous-monitoring product. You'll own
+the path from research notebook to production: training pipelines, model serving, evaluation
+harnesses, and the feature store that keeps the whole loop honest.
+
+Responsibilities
+• Train, evaluate, and ship classification and forecasting models on real patient time-series data
+• Stand up the model-serving stack (FastAPI / Triton on Kubernetes) with strict latency budgets
+• Build offline + online evaluation pipelines, including drift detection and slice analysis
+• Own the feature store integration; collaborate with data engineering on schema and lineage
+• Write rigorous, peer-reviewed model cards and risk assessments before any production rollout
+• Mentor a junior ML engineer; run a weekly paper-reading club
+
+Requirements
+• 4+ years applied ML in industry, including >=1 production deployment you owned end-to-end
+• Strong Python; deep PyTorch experience (TensorFlow nice but not required)
+• Solid grasp of statistics: hypothesis testing, calibration, fairness metrics
+• Hands-on with at least one of: feature stores (Feast, Tecton), model servers (Triton, TorchServe)
+• Comfortable with Kubernetes for model serving, MLflow or W&B for experiment tracking
+• Excellent writing — model cards, ADRs, post-mortems
+
+Nice to have
+• Healthcare or regulated-domain experience (HIPAA, model bias)
+• Time-series modeling at scale (Temporal Fusion Transformers, state-space models)
+• ONNX, TensorRT, model quantization
+• SQL fluent; can write the analytical queries you need without asking

@@ -1,0 +1,75 @@
+{
+  "_note": "Illustrative output for samples/jd-fintech.txt + samples/resume-fullstack.txt. Real model output will vary slightly run-to-run; this is what the orders of magnitude should look like.",
+  "extracted_context": {
+    "job_title": "Senior Full-Stack Engineer at Nimbus (fintech)",
+    "skills_count": 12,
+    "top_required_skills_in_order": [
+      "PostgreSQL",
+      "React",
+      "Node.js",
+      "GraphQL",
+      "System Design",
+      "AWS",
+      "TypeScript",
+      "Apollo Server",
+      "Performance Engineering",
+      "Kubernetes",
+      "Kafka",
+      "Python"
+    ]
+  },
+  "verified_scores_summary": {
+    "honesty_score": 72,
+    "overall_match": 64,
+    "headline_calibration_note": "Notable overconfidence on System Design and AWS.",
+    "top_strengths": ["React", "TypeScript", "PostgreSQL", "Node.js"],
+    "critical_gaps": ["GraphQL", "AWS", "System Design", "Kubernetes"]
+  },
+  "calibration_examples": [
+    { "skill": "System Design", "self_pct": 70, "verified_pct": 38, "delta": -32, "note": "Claimed senior-level; demonstrated Understand level only — could not justify trade-offs on caching or queueing." },
+    { "skill": "GraphQL", "self_pct": 10, "verified_pct": 18, "delta": +8, "note": "Resume did not list GraphQL; verified low — JD critical." },
+    { "skill": "PostgreSQL", "self_pct": 70, "verified_pct": 74, "delta": +4, "note": "Well calibrated; demonstrated Analyze with concrete index-design examples." }
+  ],
+  "plan_summary": {
+    "total_hours": 168,
+    "weeks": 21,
+    "items_top_3": [
+      {
+        "skill": "GraphQL",
+        "adjacency": 0.82,
+        "adjacency_rationale": "You already have strong Node.js + REST + TypeScript — moving to Apollo + schema-first thinking is days, not weeks.",
+        "hours_estimate": 25,
+        "week_window": "Weeks 1-2",
+        "resources": [
+          { "title": "Apollo Odyssey: Lift-off", "type": "course", "hours_estimate": 8, "is_free": true },
+          { "title": "How to GraphQL", "type": "tutorial", "hours_estimate": 12, "is_free": true },
+          { "title": "GraphQL Up & Running", "type": "reference", "hours_estimate": 6, "is_free": true }
+        ]
+      },
+      {
+        "skill": "AWS (ECS + IAM + CloudWatch)",
+        "adjacency": 0.62,
+        "adjacency_rationale": "You already shipped to AWS ECS at Brightstack — deepening IAM, CloudWatch SLOs, and Terraform from there is a natural next step.",
+        "hours_estimate": 50,
+        "week_window": "Weeks 3-7",
+        "resources": [
+          { "title": "AWS Skill Builder — Cloud Practitioner Path", "type": "course", "hours_estimate": 25, "is_free": true },
+          { "title": "AWS Well-Architected Framework", "type": "reference", "hours_estimate": 8, "is_free": true },
+          { "title": "AWS in Plain English (free guides)", "type": "tutorial", "hours_estimate": 10, "is_free": true }
+        ]
+      },
+      {
+        "skill": "System Design (Evaluate level)",
+        "adjacency": 0.45,
+        "adjacency_rationale": "You have services-scale intuition; the lift is to build defensible trade-off vocabulary on consistency, caching, queueing.",
+        "hours_estimate": 60,
+        "week_window": "Weeks 5-12",
+        "resources": [
+          { "title": "Designing Data-Intensive Applications", "type": "book", "hours_estimate": 40, "is_free": false },
+          { "title": "ByteByteGo Newsletter", "type": "course", "hours_estimate": 30, "is_free": true },
+          { "title": "System Design Primer", "type": "reference", "hours_estimate": 20, "is_free": true }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,29 @@
+Priya Iyer
+Senior Software Engineer · priya.iyer@example.com · github.com/priyaiyer · Bengaluru
+
+SUMMARY
+Senior full-stack engineer with 6 years building consumer and SaaS web apps. Strong in React, Node.js,
+and PostgreSQL. Comfortable owning features end-to-end and mentoring junior engineers.
+
+EXPERIENCE
+
+Senior Software Engineer — Brightstack (Series A SaaS, 2023–present)
+• Owned the customer-facing analytics dashboard in React + TypeScript; cut p95 load time 1.4s -> 380ms
+• Designed and shipped 3 new Node.js microservices behind a REST gateway; deployed on AWS ECS
+• Led migration of the reporting database from MySQL to PostgreSQL 15; tuned indexes for 6 hot queries
+• Mentor 2 mid-level engineers; run weekly design reviews and a brown-bag on system design
+
+Software Engineer — Lumio (Seed-stage edtech, 2020–2023)
+• Built the React + Redux gradebook used by 60K teachers daily; introduced suspense-based data loading
+• Wrote the Node.js exam-grading API; wrote the SQL schema and ad-hoc analytical queries
+• Set up CI in GitHub Actions and basic CloudWatch alerts on AWS
+
+Software Engineer (intern -> FT) — Polaris Labs (2019–2020)
+• Shipped Python data pipelines (Airflow) to back internal dashboards in React
+
+EDUCATION
+B.Tech, Computer Science, IIT Madras, 2019
+
+SKILLS
+React · TypeScript · Node.js · PostgreSQL · REST APIs · Redux · Tailwind · Git · AWS (ECS, S3, RDS basics)
+· CI/CD · System design (services scale, mentoring level)
