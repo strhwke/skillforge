@@ -125,4 +125,34 @@
 
 ---
 
+### Phase 5.5 — Live debugging session (DONE, validated via smoke tests)
+
+User ran the live flow and reported "model returned non-JSON" 502s on /api/assess. Took agentic control to debug end-to-end. Wrote `scripts/smoke.mjs`, `scripts/smoke-plan.mjs`, `scripts/smoke-resources.mjs` to drive the full pipeline against the dev server.
+
+**Five fixes shipped, each validated by re-running the smoke harness before moving on:**
+
+1. **Default `thinkingBudget: 0` for JSON-mode calls in `gemini.ts`** — Gemini 2.5 Flash has dynamic thinking on by default which silently eats `maxOutputTokens`. With our 1024-token budget on assess turns, ~half the calls came back empty -> safeJsonParse null -> 502. Validated: 0 failures across 3 turns vs ~3 of 4 failing before.
+
+2. **Safety net in `/api/assess`** for `is_final=true` paths missing `final_score`/`final_bloom`/`evidence_quotes` — the schema marks these optional and the model occasionally skips them. Now derived deterministically from prior turns + latest grading. Validated: `score=65 bloom=Remember quotes=2` instead of `undefined`.
+
+3. **Switched plan synthesis from `gemini-2.5-pro` to `gemini-2.5-flash` with `thinkingBudget: 4096`** — Pro is `limit: 0` on free tier for newly-created projects (confirmed by the API error). Flash + thinking matches Pro's quality on structured-output reasoning. Validated: plan endpoint went from 500 (quota error) to 200 with a high-quality 4-item plan.
+
+4. **Architectural refactor**: split resource curation out of `/api/plan` into a per-skill `/api/resources` route. Plan synthesis stays inside the 60s Vercel hobby timeout, and the client fetches resources progressively with skeleton placeholders + a live status banner ("Searching the web for resources on X..."). New shared module: `src/lib/curate-resources.ts`. Validated: 5 sequential resource calls completed without timeout, structurally clean.
+
+5. **Switched assess + resource curation to `gemini-2.5-flash-lite`** — fresh project has only 20 Flash requests/day on free tier (we burned through ours during testing). Flash-Lite is a separate, much larger quota pool (~1000 RPD per Google docs). Quality is still good enough for routine tasks given our strict JSON schemas. Validated: single grounded call returned 3 high-quality real resources in 5.2s with `usedFallback: false`.
+
+**Quota discoveries (worth saving for future):**
+- Newly-created GCP projects on free tier get `gemini-2.5-pro: limit 0`. The "I have Gemini Pro" consumer subscription does NOT grant API access.
+- Newly-created projects get `gemini-2.5-flash: 20 RPD` initially (not the 250 in public docs). This auto-scales up with usage history.
+- `gemini-2.5-flash-lite` daily quota is far higher (~1000 RPD per docs).
+- All Gemini 2.5 models have "thinking" on by default which eats output token budget — explicitly disable with `thinkingBudget: 0` for routine JSON calls.
+
+**Polish fix**: replaced "Web-cited" badge with conditional "Web-cited" or "AI-curated" so we don't claim citation when grounding metadata is empty.
+
+### Phase 5.6 — Honest README rate-limit section + model routing table (DONE)
+
+Updated README so future readers see the actual constraints, not the optimistic ones from the original plan. Added explicit guidance: enable billing for smooth demo.
+
+---
+
 (future phases append here)

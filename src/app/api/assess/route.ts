@@ -40,7 +40,9 @@ export async function POST(req: NextRequest) {
     }
 
     const result = await generate<AssessResponse>({
-      model: Models.flash,
+      // High-volume path: ~12 calls per session. Use flash-lite to stay
+      // inside the per-day free quota (Flash is reserved for extract + plan).
+      model: Models.flashLite,
       systemInstruction: ASSESS_SYSTEM,
       prompt: assessPrompt({
         skill: body.skill,
@@ -63,7 +65,51 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    return NextResponse.json(result.json);
+    // Safety net: when the model declares is_final=true but skips the final_*
+    // fields, derive them deterministically from prior turns + the latest
+    // grading so the client never has to render `undefined/100`.
+    const out = result.json;
+    if (out.is_final) {
+      const allTurns = [...(body.priorTurns ?? [])];
+      // Append the just-completed turn (using grading_of_previous) for scoring
+      const justGraded = out.grading_of_previous;
+      const lastQuestion =
+        body.priorTurns && body.priorTurns.length > 0
+          ? body.priorTurns[body.priorTurns.length - 1]
+          : undefined;
+      void lastQuestion;
+      if (justGraded && body.latestUserAnswer) {
+        allTurns.push({
+          turn_index: allTurns.length,
+          question: "(latest)",
+          target_bloom: justGraded.bloom_level_demonstrated,
+          user_answer: body.latestUserAnswer,
+          graded: justGraded,
+        });
+      }
+      const graded = allTurns.filter((t) => t.graded);
+      if (graded.length > 0) {
+        const lastTwo = graded.slice(-2).map((t) => t.graded!.score);
+        const meanAll = graded.reduce((s, t) => s + t.graded!.score, 0) / graded.length;
+        const derivedScore = Math.round(Math.max(...lastTwo) * 0.7 + meanAll * 0.3);
+        const lastBloom = graded[graded.length - 1].graded!.bloom_level_demonstrated;
+        if (typeof out.final_score !== "number") out.final_score = derivedScore;
+        if (!out.final_bloom) out.final_bloom = lastBloom;
+        if (!out.evidence_quotes || out.evidence_quotes.length === 0) {
+          out.evidence_quotes = graded
+            .map((t) => t.graded!.evidence)
+            .filter(Boolean)
+            .slice(-3);
+        }
+      } else {
+        // Pathological: is_final=true with zero grades. Skipped/empty interview.
+        if (typeof out.final_score !== "number") out.final_score = 0;
+        if (!out.final_bloom) out.final_bloom = "Remember";
+        if (!out.evidence_quotes) out.evidence_quotes = [];
+      }
+    }
+
+    return NextResponse.json(out);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
     console.error("[/api/assess]", err);

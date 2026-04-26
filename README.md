@@ -198,15 +198,22 @@ The landing page has a **"Load sample"** button that pre-fills the fintech case 
 - **Critical gap on GraphQL** (not on resume, JD-required).
 - A learning plan that puts GraphQL first (high adjacency from Node + REST), AWS second (medium adjacency), and System Design third (lower adjacency, longest time investment).
 
-## Rate-limit budget
+## Model routing and rate-limit budget
 
-A single full demo session uses approximately:
+The Gemini API free tier is meaningfully tighter than the public docs imply for newly-created projects (Gemini 2.5 Pro is `limit: 0` and 2.5 Flash starts at 20 RPD on a fresh project until usage scales it up). SkillForge is engineered around this:
 
-- **Flash**: 12 calls (1 extract + 8 skills × ~1.3 turns avg) — well under 250 RPD free
-- **Pro**: 1 call (plan synthesis) — well under 100 RPD free
-- **Grounded Flash**: 5-7 calls (one per planned skill) — well under 500 RPD free
+| Path | Volume | Model | Reason |
+| --- | --- | --- | --- |
+| `/api/extract` | 1 / session | `gemini-2.5-flash` | Quality-critical structured extraction, low volume |
+| `/api/assess` | ~10-15 / session | `gemini-2.5-flash-lite` | High volume per-turn; flash-lite has the larger daily quota |
+| `/api/plan` synthesis | 1 / session | `gemini-2.5-flash` (with `thinkingBudget: 4096`) | Reasoning-heavy; thinking compensates for not having Pro |
+| `/api/resources` (grounded) | ~5-6 / session | `gemini-2.5-flash-lite` (with `google_search`) | High volume; uses the larger pool |
 
-Comfortable headroom for many demo runs without hitting limits.
+`thinkingBudget: 0` is the default for routine JSON-mode calls — Gemini 2.5's default thinking otherwise consumes the `maxOutputTokens` budget and produces empty/truncated responses (the "model returned non-JSON" trap we hit and fixed during the build).
+
+Resource curation is split off from `/api/plan` into its own route so the client can fetch them sequentially with progressive UI updates. This (a) keeps each route under the 60s Vercel hobby timeout and (b) paces calls under Gemini's per-minute ceiling without parallel collisions.
+
+**For a smooth demo on the free tier**, enable billing on your Google Cloud project to lift the daily ceilings. The app works end-to-end on free tier but a fresh project may need its first day of usage to "warm up" the auto-tier system.
 
 ## Limitations and honest caveats
 

@@ -93,6 +93,14 @@ export async function generate<T = unknown>(opts: GenOpts): Promise<GenResult<T>
 
   if (typeof opts.thinkingBudget === "number") {
     config.thinkingConfig = { thinkingBudget: opts.thinkingBudget };
+  } else if (opts.json) {
+    // Gemini 2.5 has "thinking" on by default. For routine JSON-schema calls
+    // (extract, per-turn assess, grading) the schema enforces structure so we
+    // don't need extended thinking — and thinking tokens otherwise eat into
+    // maxOutputTokens, often producing empty/truncated responses ("model
+    // returned non-JSON" 502s). Heavy-reasoning callers (plan synthesis on Pro)
+    // pass their own thinkingBudget explicitly and override this default.
+    config.thinkingConfig = { thinkingBudget: 0 };
   }
 
   const callOnce = async () => {

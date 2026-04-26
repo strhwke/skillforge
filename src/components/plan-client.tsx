@@ -31,6 +31,11 @@ export function PlanClient() {
   const [hydrated, setHydrated] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [resourceProgress, setResourceProgress] = useState<{
+    done: number;
+    total: number;
+    currentSkill: string;
+  } | null>(null);
 
   useEffect(() => {
     const s = loadSession();
@@ -45,7 +50,7 @@ export function PlanClient() {
     setSession(s);
     setHydrated(true);
 
-    if (!s.plan) {
+    if (!s.plan || !s.plan.items.every((i) => i.resources.length > 0)) {
       generatePlan(s);
     }
   }, [router]);
@@ -53,20 +58,80 @@ export function PlanClient() {
   async function generatePlan(s: Session) {
     setLoading(true);
     setError(null);
+    setResourceProgress(null);
     try {
-      const res = await fetch("/api/plan", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ context: s.context, scores: s.scores }),
-      });
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        throw new Error(j.error || `Plan generation failed (${res.status})`);
+      let working: Session = s;
+      // Step 1: plan synthesis (or reuse if items already exist without resources)
+      if (!s.plan) {
+        const res = await fetch("/api/plan", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ context: s.context, scores: s.scores }),
+        });
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({}));
+          throw new Error(j.error || `Plan synthesis failed (${res.status})`);
+        }
+        const plan = (await res.json()) as LearningPlan;
+        working = { ...s, plan };
+        saveSession(working);
+        setSession(working);
       }
-      const plan = (await res.json()) as LearningPlan;
-      const next: Session = { ...s, plan };
-      saveSession(next);
-      setSession(next);
+
+      // Step 2: progressive resource curation, one skill per call.
+      // Sequential by design — paces the calls under Gemini's per-minute ceiling
+      // and lets the UI fill in cards as each result arrives.
+      const itemsNeedingResources =
+        working.plan!.items.filter((i) => i.resources.length === 0).length;
+      if (itemsNeedingResources === 0) {
+        return;
+      }
+      let done = 0;
+      for (let i = 0; i < working.plan!.items.length; i++) {
+        const item = working.plan!.items[i];
+        if (item.resources.length > 0) continue;
+        setResourceProgress({
+          done,
+          total: itemsNeedingResources,
+          currentSkill: item.skill,
+        });
+        const matchingScore = working.scores!.find((sc) => sc.name === item.skill);
+        const res = await fetch("/api/resources", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            skill: item.skill,
+            currentBloom: matchingScore?.bloom_level ?? "Remember",
+            targetBloom: item.bloom_target,
+            candidateStrengths: working.context!.candidate_strengths_inferred ?? [],
+            jobContext:
+              working.context!.job_title +
+              " — " +
+              working.context!.jd_summary.slice(0, 240),
+          }),
+        });
+        if (res.ok) {
+          const { resources } = (await res.json()) as { resources: typeof item.resources };
+          working = {
+            ...working,
+            plan: {
+              ...working.plan!,
+              items: working.plan!.items.map((it, idx) =>
+                idx === i ? { ...it, resources } : it,
+              ),
+            },
+          };
+          saveSession(working);
+          setSession(working);
+        }
+        done++;
+        setResourceProgress({
+          done,
+          total: itemsNeedingResources,
+          currentSkill: item.skill,
+        });
+      }
+      setResourceProgress(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Plan generation failed.");
     } finally {
@@ -115,15 +180,33 @@ export function PlanClient() {
           </Button>
         </div>
 
-        {loading && (
+        {loading && !session.plan && (
           <div className="flex flex-col items-center justify-center py-20 gap-3 text-[var(--color-fg-muted)]">
             <Loader2 className="w-6 h-6 animate-spin" />
-            <p className="text-sm">
-              Synthesizing your plan and curating live resources from the web...
-            </p>
+            <p className="text-sm">Synthesizing your adjacency-aware plan...</p>
             <p className="text-xs text-[var(--color-fg-dim)]">
-              This usually takes 15-25 seconds.
+              Reasoning over your strengths and the JD. ~30 seconds.
             </p>
+          </div>
+        )}
+
+        {loading && session.plan && resourceProgress && (
+          <div className="mb-6 rounded-md border border-[var(--color-accent)]/30 bg-[var(--color-accent)]/5 px-4 py-3 flex items-center gap-3">
+            <Loader2 className="w-4 h-4 animate-spin text-[var(--color-accent)]" />
+            <div className="flex-1 min-w-0">
+              <div className="text-sm">
+                Searching the web for resources on{" "}
+                <span className="font-medium gradient-text">{resourceProgress.currentSkill}</span>
+                ...
+              </div>
+              <div className="text-xs text-[var(--color-fg-dim)]">
+                {resourceProgress.done} / {resourceProgress.total} skills curated · pacing
+                requests under Gemini's free-tier limit
+              </div>
+            </div>
+            <div className="text-xs font-mono text-[var(--color-fg-dim)] tabular-nums">
+              {Math.round((resourceProgress.done / resourceProgress.total) * 100)}%
+            </div>
           </div>
         )}
 
@@ -138,7 +221,7 @@ export function PlanClient() {
           </Card>
         )}
 
-        {session.plan && !loading && (
+        {session.plan && (
           <>
             {/* Top stats */}
             <motion.div
@@ -318,14 +401,29 @@ function PlanItemCard({ item, index }: { item: LearningPlanItem; index: number }
               Curated resources
             </div>
             <div className="grid sm:grid-cols-2 gap-3">
-              {item.resources.map((r) => (
-                <ResourceCard key={r.url} r={r} />
-              ))}
+              {item.resources.length === 0
+                ? Array.from({ length: 3 }).map((_, i) => <ResourceSkeleton key={i} />)
+                : item.resources.map((r) => <ResourceCard key={r.url} r={r} />)}
             </div>
           </div>
         </CardContent>
       </Card>
     </motion.div>
+  );
+}
+
+function ResourceSkeleton() {
+  return (
+    <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-bg-elev)] p-3 flex flex-col gap-2 overflow-hidden relative">
+      <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/5 to-transparent animate-[shimmer_2.4s_infinite]" />
+      <div className="flex items-center gap-2">
+        <div className="w-7 h-7 rounded-md bg-[var(--color-bg-card)] border border-[var(--color-border)]" />
+        <div className="flex-1 h-3 rounded bg-[var(--color-bg-card)]/70" />
+      </div>
+      <div className="h-4 rounded bg-[var(--color-bg-card)]/70 w-4/5" />
+      <div className="h-3 rounded bg-[var(--color-bg-card)]/70 w-full" />
+      <div className="h-3 rounded bg-[var(--color-bg-card)]/70 w-1/2" />
+    </div>
   );
 }
 
@@ -355,11 +453,12 @@ function ResourceCard({ r }: { r: ResourceItem }) {
               Paid
             </Badge>
           )}
-          {r.cited && (
-            <Badge variant="cyan" className="!text-[10px] !px-1.5 !py-0">
-              Web-cited
-            </Badge>
-          )}
+          <Badge
+            variant={r.cited ? "cyan" : "default"}
+            className="!text-[10px] !px-1.5 !py-0"
+          >
+            {r.cited ? "Web-cited" : "AI-curated"}
+          </Badge>
         </div>
       </div>
       <div className="font-medium text-sm leading-snug group-hover:text-[var(--color-fg)] flex items-start gap-1">

@@ -1,13 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { extractCitations, generate, Models } from "@/lib/gemini";
-import { PLAN_SCHEMA, PLAN_SYSTEM, planPrompt, RESOURCE_SYSTEM, resourcePrompt } from "@/lib/prompts/plan";
-import { getFallbackResources } from "@/lib/fallback-resources";
-import { safeJsonParse } from "@/lib/utils";
+import { generate, Models } from "@/lib/gemini";
+import { PLAN_SCHEMA, PLAN_SYSTEM, planPrompt } from "@/lib/prompts/plan";
 import type {
   ExtractedContext,
   LearningPlan,
   LearningPlanItem,
-  ResourceItem,
   SkillScore,
 } from "@/lib/types";
 import type { BloomLevel } from "@/lib/utils";
@@ -70,9 +67,13 @@ export async function POST(req: NextRequest) {
       } satisfies LearningPlan);
     }
 
-    // Step 1: Pro plan synthesis (one call, all gaps)
+    // Step 1: plan synthesis (one call, all gaps).
+    // We use Flash + a large thinking budget instead of Pro: Gemini 2.5 Pro
+    // is not available on the free tier (quota limit: 0). Flash with thinking
+    // hits the same quality bar for structured-output reasoning and keeps the
+    // whole app on the free tier.
     const planResult = await generate<PlanFromModel>({
-      model: Models.pro,
+      model: Models.flash,
       systemInstruction: PLAN_SYSTEM,
       prompt: planPrompt({
         jdSummary: body.context.jd_summary,
@@ -84,8 +85,8 @@ export async function POST(req: NextRequest) {
       json: true,
       responseSchema: PLAN_SCHEMA as unknown as Record<string, unknown>,
       temperature: 0.3,
-      maxOutputTokens: 4096,
-      thinkingBudget: 1024,
+      maxOutputTokens: 8192,
+      thinkingBudget: 4096,
     });
 
     if (!planResult.json) {
@@ -103,32 +104,27 @@ export async function POST(req: NextRequest) {
       .sort((a, b) => a.plan_order_priority - b.plan_order_priority)
       .slice(0, 6);
 
-    const enriched: LearningPlanItem[] = await Promise.all(
-      itemsForResources.map(async (item) => {
-        const matchingScore = body.scores.find((s) => s.name === item.skill);
-        const currentBloom = matchingScore?.bloom_level ?? "Remember";
-        const currentPct = matchingScore?.verified_pct ?? 0;
-        const targetPct = bloomTargetToPct(item.bloom_target);
-        const resources = await curateResources({
-          skill: item.skill,
-          currentBloom,
-          targetBloom: item.bloom_target,
-          candidateStrengths: candidateStrengthNames,
-          jobContext: body.context.job_title + " — " + body.context.jd_summary.slice(0, 240),
-        });
-        return {
-          skill: item.skill,
-          current_pct: currentPct,
-          target_pct: targetPct,
-          bloom_target: item.bloom_target,
-          adjacency: item.adjacency,
-          adjacency_rationale: item.adjacency_rationale,
-          hours_estimate: item.hours_estimate,
-          week_window: item.week_window,
-          resources,
-        };
-      }),
-    );
+    // /api/plan only does the plan synthesis. Resource curation is split off
+    // to /api/resources (one skill per call) so the client can fetch them
+    // sequentially with progressive UI updates. This keeps each route under
+    // the 60s Vercel hobby timeout AND lets us pace requests so we stay under
+    // Gemini 2.5 Flash's ~20-RPM free-tier ceiling without parallel collisions.
+    const enriched: LearningPlanItem[] = itemsForResources.map((item) => {
+      const matchingScore = body.scores.find((s) => s.name === item.skill);
+      const currentPct = matchingScore?.verified_pct ?? 0;
+      const targetPct = bloomTargetToPct(item.bloom_target);
+      return {
+        skill: item.skill,
+        current_pct: currentPct,
+        target_pct: targetPct,
+        bloom_target: item.bloom_target,
+        adjacency: item.adjacency,
+        adjacency_rationale: item.adjacency_rationale,
+        hours_estimate: item.hours_estimate,
+        week_window: item.week_window,
+        resources: [],
+      };
+    });
 
     const totalHours = enriched.reduce((s, i) => s + i.hours_estimate, 0);
     const weeks = estimateWeeks(enriched);
@@ -161,83 +157,6 @@ function bloomTargetToPct(b: BloomLevel): number {
 }
 
 function estimateWeeks(items: LearningPlanItem[]): number {
-  // Assume 8 hours/week of learning effort. Round up to nearest week.
   const total = items.reduce((s, i) => s + i.hours_estimate, 0);
   return Math.max(1, Math.ceil(total / 8));
-}
-
-async function curateResources(args: {
-  skill: string;
-  currentBloom: BloomLevel;
-  targetBloom: BloomLevel;
-  candidateStrengths: string[];
-  jobContext: string;
-}): Promise<ResourceItem[]> {
-  try {
-    const result = await generate<ResourceItem[]>({
-      model: Models.flash,
-      systemInstruction: RESOURCE_SYSTEM,
-      prompt: resourcePrompt({
-        skill: args.skill,
-        currentBloom: args.currentBloom,
-        targetBloom: args.targetBloom,
-        candidateStrengths: args.candidateStrengths,
-        jobContext: args.jobContext,
-      }),
-      googleSearch: true,
-      temperature: 0.3,
-      maxOutputTokens: 2048,
-    });
-
-    // The response text should be a JSON array; grounded mode disables responseMimeType
-    const parsed = safeJsonParse<ResourceItem[]>(result.text);
-    if (!parsed || !Array.isArray(parsed) || parsed.length === 0) {
-      return getFallbackResources(args.skill);
-    }
-
-    // Mark as cited if we got grounding metadata back
-    const citations = extractCitations(result.groundingMetadata);
-    const citedUrls = new Set(citations.map((c) => c.uri));
-
-    return parsed
-      .filter(
-        (r): r is ResourceItem =>
-          !!r && typeof r.url === "string" && /^https?:\/\//i.test(r.url) && !!r.title,
-      )
-      .slice(0, 4)
-      .map((r) => ({
-        ...r,
-        cited: citedUrls.has(r.url) || citations.length > 0,
-        is_free: typeof r.is_free === "boolean" ? r.is_free : true,
-        hours_estimate: clampHours(r.hours_estimate),
-        provider: r.provider || hostnameOf(r.url),
-        type: normalizeResourceType(r.type),
-      }));
-  } catch (err) {
-    console.warn(`[plan] resource curation failed for ${args.skill}:`, err);
-    return getFallbackResources(args.skill);
-  }
-}
-
-function clampHours(n: unknown): number {
-  const x = typeof n === "number" ? n : parseFloat(String(n ?? "10"));
-  if (!Number.isFinite(x)) return 10;
-  return Math.max(2, Math.min(80, Math.round(x)));
-}
-
-function hostnameOf(url: string): string {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "");
-  } catch {
-    return "web";
-  }
-}
-
-function normalizeResourceType(t: unknown): ResourceItem["type"] {
-  const s = String(t ?? "").toLowerCase();
-  if (s.includes("book")) return "book";
-  if (s.includes("course")) return "course";
-  if (s.includes("project")) return "project";
-  if (s.includes("ref") || s.includes("doc")) return "reference";
-  return "tutorial";
 }
