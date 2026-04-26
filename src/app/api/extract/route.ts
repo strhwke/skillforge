@@ -58,7 +58,10 @@ export async function POST(req: NextRequest) {
     }
 
     const result = await generate<ExtractedContext>({
-      model: Models.flash,
+      // flash-lite: fresh GCP free tier caps gemini-2.5-flash at 20 RPD;
+      // flash-lite has a much larger pool and handles strict JSON-schema
+      // extraction at the same quality bar with our tightened prompts.
+      model: Models.flashLite,
       systemInstruction: EXTRACT_SYSTEM,
       prompt: extractPrompt({ jd, resume }),
       json: true,

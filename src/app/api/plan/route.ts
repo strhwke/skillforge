@@ -68,12 +68,12 @@ export async function POST(req: NextRequest) {
     }
 
     // Step 1: plan synthesis (one call, all gaps).
-    // We use Flash + a large thinking budget instead of Pro: Gemini 2.5 Pro
-    // is not available on the free tier (quota limit: 0). Flash with thinking
-    // hits the same quality bar for structured-output reasoning and keeps the
-    // whole app on the free tier.
+    // Pro is limit:0 on free tier, and gemini-2.5-flash is 20 RPD on a fresh
+    // project — we burn that bucket fast. flash-lite has the much larger
+    // daily pool and, with thinkingBudget=1024 + strict JSON schema, hits the
+    // quality bar for plan synthesis just fine.
     const planResult = await generate<PlanFromModel>({
-      model: Models.flash,
+      model: Models.flashLite,
       systemInstruction: PLAN_SYSTEM,
       prompt: planPrompt({
         jdSummary: body.context.jd_summary,

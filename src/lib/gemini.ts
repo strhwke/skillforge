@@ -1,5 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { safeJsonParse } from "./utils";
+import { groqGenerate, isGroqAvailable } from "./groq";
 
 const apiKey = process.env.GEMINI_API_KEY;
 if (!apiKey) {
@@ -116,13 +117,31 @@ export async function generate<T = unknown>(opts: GenOpts): Promise<GenResult<T>
     response = await callOnce();
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    // retry once on rate-limit / transient
-    if (/429|RESOURCE_EXHAUSTED|UNAVAILABLE|deadline/i.test(msg)) {
-      await new Promise((r) => setTimeout(r, 1500));
-      response = await callOnce();
-    } else {
-      throw err;
+    const isQuota = /429|RESOURCE_EXHAUSTED|UNAVAILABLE|deadline/i.test(msg);
+    if (!isQuota) throw err;
+
+    // Groq fallback for non-grounded calls. Gemini's free-tier daily quotas
+    // are tight (flash 20 RPD, pro 0); Groq's Llama 3.3 70B serves ~14k RPD
+    // with native JSON mode, so the demo never goes dark mid-flow.
+    // Grounded calls (googleSearch) cannot fall back here — Groq has no
+    // web-search tool — so we let those propagate to the per-route static
+    // fallback (e.g. fallback-resources.ts).
+    if (!opts.googleSearch && isGroqAvailable()) {
+      // eslint-disable-next-line no-console
+      console.warn("[skillforge] Gemini quota hit, falling back to Groq Llama 3.3 70B");
+      const groq = await groqGenerate<T>({
+        prompt: opts.prompt,
+        systemInstruction: opts.systemInstruction,
+        json: opts.json,
+        temperature: opts.temperature,
+        maxOutputTokens: opts.maxOutputTokens,
+      });
+      return { text: groq.text, json: groq.json, raw: groq.raw };
     }
+
+    // No fallback path — single in-process retry then surface the error.
+    await new Promise((r) => setTimeout(r, 1500));
+    response = await callOnce();
   }
 
   const text = (response.text ?? "").trim();
