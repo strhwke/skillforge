@@ -122,8 +122,8 @@ export function AssessClient() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           skill: currentSkill,
-          jdContext: session.context!.jd_summary,
-          resumeSummary: session.context!.resume_summary,
+          jdContext: session.context!.jd_summary ?? "",
+          resumeSummary: session.context!.resume_summary ?? "",
           selfRating,
           priorTurns: [],
         }),
@@ -183,8 +183,8 @@ export function AssessClient() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           skill: currentSkill,
-          jdContext: session.context!.jd_summary,
-          resumeSummary: session.context!.resume_summary,
+          jdContext: session.context!.jd_summary ?? "",
+          resumeSummary: session.context!.resume_summary ?? "",
           selfRating: assessment.self_rating,
           priorTurns,
           latestUserAnswer: answer,

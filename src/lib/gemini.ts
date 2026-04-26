@@ -129,8 +129,16 @@ export async function generate<T = unknown>(opts: GenOpts): Promise<GenResult<T>
     if (!opts.googleSearch && isGroqAvailable()) {
       // eslint-disable-next-line no-console
       console.warn("[skillforge] Gemini quota hit, falling back to Groq Llama 3.3 70B");
+      // Groq's json_object mode produces valid JSON but doesn't enforce a
+      // schema like Gemini's responseSchema does, so optional-looking fields
+      // (jd_summary, resume_summary, etc.) get dropped silently and crash
+      // downstream consumers. Injecting the schema into the prompt forces
+      // Llama to emit every required field.
+      const schemaHint = opts.responseSchema
+        ? `\n\nReturn ONLY a JSON object that exactly matches this schema (every required field MUST be present, never null/undefined):\n${JSON.stringify(opts.responseSchema)}`
+        : "";
       const groq = await groqGenerate<T>({
-        prompt: opts.prompt,
+        prompt: opts.prompt + schemaHint,
         systemInstruction: opts.systemInstruction,
         json: opts.json,
         temperature: opts.temperature,

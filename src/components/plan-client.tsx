@@ -105,9 +105,9 @@ export function PlanClient() {
             targetBloom: item.bloom_target,
             candidateStrengths: working.context!.candidate_strengths_inferred ?? [],
             jobContext:
-              working.context!.job_title +
+              (working.context!.job_title ?? "the role") +
               " — " +
-              working.context!.jd_summary.slice(0, 240),
+              (working.context!.jd_summary ?? "").slice(0, 240),
           }),
         });
         if (res.ok) {
